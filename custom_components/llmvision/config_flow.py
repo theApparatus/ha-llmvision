@@ -490,7 +490,7 @@ class llmvisionConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 validator = Validator(self.hass, user_input)
                 await validator.openrouter()
                 return self.async_create_entry(
-                    title="OpenRouter",
+                    title=f"OpenRouter ({user_input.get('default_model', DEFAULT_MODEL_OPENROUTER)})",
                     data={
                         "provider": "OpenRouter",
                         CONF_OPENROUTER_API_KEY: user_input[CONF_OPENROUTER_API_KEY],
