@@ -225,10 +225,13 @@ class Validator:
             raise ServiceValidationError("handshake_failed")
 
     async def semantic_index(self) -> bool:
-        # check if semantic_index is already configured
-        for uid in self.hass.data[DOMAIN]:
-            if 'retention_time' in self.hass.data[DOMAIN][uid]:
-                return False
+        """Validate Event Calendar configuration."""
+        retention_time = self.user_input.get(CONF_RETENTION_TIME)
+        
+        # Validate retention time
+        if retention_time < 0:
+            raise ServiceValidationError("Retention time cannot be negative")
+            
         return True
 
     def get_configured_providers(self):
@@ -535,26 +538,38 @@ class llmvisionConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     async def async_step_semantic_index(self, user_input=None):
+        """Handle Event Calendar configuration."""
+        errors = {}
         data_schema = vol.Schema({
-            vol.Required(CONF_RETENTION_TIME, default=7): int,
+            vol.Required(CONF_RETENTION_TIME, default=7): vol.All(
+                int,
+                vol.Range(min=0)  # Allow 0 for no auto-deletion
+            ),
         })
+
         if user_input is not None:
-            user_input["provider"] = self.init_info["provider"]
-            validator = Validator(self.hass, user_input)
             try:
-                if not await validator.semantic_index():
-                    return self.async_abort(reason="already_configured")
-                # add the mode to user_input
-                return self.async_create_entry(title="LLM Vision Events", data=user_input)
-            except ServiceValidationError as e:
-                _LOGGER.error(f"Validation failed: {e}")
-                return self.async_show_form(
-                    step_id="semantic_index",
-                    data_schema=data_schema,
-                    errors={"base": "handshake_failed"}
+                # Check if Event Calendar is already configured
+                for entry in self.hass.config_entries.async_entries(DOMAIN):
+                    if entry.data.get("provider") == "Event Calendar":
+                        return self.async_abort(reason="already_configured")
+                
+                # Add provider to user_input
+                user_input["provider"] = "Event Calendar"
+                
+                validator = Validator(self.hass, user_input)
+                await validator.semantic_index()
+                
+                return self.async_create_entry(
+                    title="LLM Vision Events",
+                    data=user_input
                 )
+            except Exception as error:
+                _LOGGER.error(f"Failed to setup Event Calendar: {error}")
+                errors["base"] = "unknown"
 
         return self.async_show_form(
             step_id="semantic_index",
             data_schema=data_schema,
+            errors=errors,
         )
