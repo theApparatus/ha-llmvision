@@ -1,4 +1,18 @@
-# Declare variables
+"""LLM Vision integration."""
+from __future__ import annotations
+
+import logging
+import os
+from typing import Any
+
+import voluptuous as vol
+
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import Platform
+from homeassistant.core import HomeAssistant
+import homeassistant.helpers.config_validation as cv
+from homeassistant.helpers.typing import ConfigType
+
 from .const import (
     DOMAIN,
     CONF_OPENAI_API_KEY,
@@ -36,20 +50,24 @@ from .const import (
 from .calendar import SemanticIndex
 from datetime import timedelta
 from homeassistant.util import dt as dt_util
-from homeassistant.config_entries import ConfigEntry
 from .request_handlers import RequestHandler
 from .media_handlers import MediaProcessor
 from homeassistant.core import SupportsResponse
 from homeassistant.exceptions import ServiceValidationError
-import logging
 
 _LOGGER = logging.getLogger(__name__)
 
 
-async def async_setup_entry(hass, entry):
-    """Save config entry to hass.data"""
-    # Use the entry_id from the config entry as the UID
-    entry_uid = entry.entry_id
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Set up LLMVision component."""
+    hass.data.setdefault(DOMAIN, {})
+    return True
+
+
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Set up LLMVision from a config entry."""
+    domain_data = {}
+    hass.data[DOMAIN][entry.entry_id] = domain_data
 
     # Get all entries from config flow
     openai_api_key = entry.data.get(CONF_OPENAI_API_KEY)
@@ -65,10 +83,6 @@ async def async_setup_entry(hass, entry):
     custom_openai_endpoint = entry.data.get(CONF_CUSTOM_OPENAI_ENDPOINT)
     custom_openai_api_key = entry.data.get(CONF_CUSTOM_OPENAI_API_KEY)
     retention_time = entry.data.get(CONF_RETENTION_TIME)
-
-    # Ensure DOMAIN exists in hass.data
-    if DOMAIN not in hass.data:
-        hass.data[DOMAIN] = {}
 
     # Create a dictionary for the entry data
     entry_data = {
@@ -92,7 +106,7 @@ async def async_setup_entry(hass, entry):
                            value in entry_data.items() if value is not None}
 
     # Store the filtered entry data under the entry_id
-    hass.data[DOMAIN][entry_uid] = filtered_entry_data
+    hass.data[DOMAIN][entry.entry_id] = filtered_entry_data
 
     # check if the entry is the calendar entry (has entry rentention_time)
     if filtered_entry_data.get(CONF_RETENTION_TIME) is not None:
@@ -240,7 +254,10 @@ class ServiceCallData:
         return self
 
 
-def setup(hass, config):
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Set up LLMVision component."""
+    hass.data.setdefault(DOMAIN, {})
+    # Register services
     async def image_analyzer(data_call):
         """Handle the service call to analyze an image with LLM Vision"""
         start = dt_util.now()
@@ -363,21 +380,29 @@ def setup(hass, config):
         await _update_sensor(hass, sensor_entity, response["response_text"])
         return response
 
-    # Register services
-    hass.services.register(
-        DOMAIN, "image_analyzer", image_analyzer,
+    # Register services correctly in async context
+    hass.services.async_register(
+        DOMAIN,
+        "image_analyzer",
+        image_analyzer,
         supports_response=SupportsResponse.ONLY
     )
-    hass.services.register(
-        DOMAIN, "video_analyzer", video_analyzer,
+    hass.services.async_register(
+        DOMAIN,
+        "video_analyzer",
+        video_analyzer,
         supports_response=SupportsResponse.ONLY
     )
-    hass.services.register(
-        DOMAIN, "stream_analyzer", stream_analyzer,
+    hass.services.async_register(
+        DOMAIN,
+        "stream_analyzer",
+        stream_analyzer,
         supports_response=SupportsResponse.ONLY
     )
-    hass.services.register(
-        DOMAIN, "data_analyzer", data_analyzer,
+    hass.services.async_register(
+        DOMAIN,
+        "data_analyzer",
+        data_analyzer,
     )
 
     return True
