@@ -19,6 +19,7 @@ from .const import (
     CONF_ANTHROPIC_API_KEY,
     CONF_GOOGLE_API_KEY,
     CONF_GROQ_API_KEY,
+    CONF_OPENROUTER_API_KEY,
     CONF_LOCALAI_IP_ADDRESS,
     CONF_LOCALAI_PORT,
     CONF_LOCALAI_HTTPS,
@@ -74,6 +75,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     anthropic_api_key = entry.data.get(CONF_ANTHROPIC_API_KEY)
     google_api_key = entry.data.get(CONF_GOOGLE_API_KEY)
     groq_api_key = entry.data.get(CONF_GROQ_API_KEY)
+    openrouter_api_key = entry.data.get(CONF_OPENROUTER_API_KEY)
     localai_ip_address = entry.data.get(CONF_LOCALAI_IP_ADDRESS)
     localai_port = entry.data.get(CONF_LOCALAI_PORT)
     localai_https = entry.data.get(CONF_LOCALAI_HTTPS)
@@ -83,6 +85,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     custom_openai_endpoint = entry.data.get(CONF_CUSTOM_OPENAI_ENDPOINT)
     custom_openai_api_key = entry.data.get(CONF_CUSTOM_OPENAI_API_KEY)
     retention_time = entry.data.get(CONF_RETENTION_TIME)
+    provider = entry.data.get("provider")
+    default_model = entry.data.get("default_model")
 
     # Create a dictionary for the entry data
     entry_data = {
@@ -90,6 +94,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         CONF_ANTHROPIC_API_KEY: anthropic_api_key,
         CONF_GOOGLE_API_KEY: google_api_key,
         CONF_GROQ_API_KEY: groq_api_key,
+        CONF_OPENROUTER_API_KEY: openrouter_api_key,
         CONF_LOCALAI_IP_ADDRESS: localai_ip_address,
         CONF_LOCALAI_PORT: localai_port,
         CONF_LOCALAI_HTTPS: localai_https,
@@ -98,18 +103,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         CONF_OLLAMA_HTTPS: ollama_https,
         CONF_CUSTOM_OPENAI_ENDPOINT: custom_openai_endpoint,
         CONF_CUSTOM_OPENAI_API_KEY: custom_openai_api_key,
-        CONF_RETENTION_TIME: retention_time
+        CONF_RETENTION_TIME: retention_time,
     }
 
-    # Filter out None values
-    filtered_entry_data = {key: value for key,
-                           value in entry_data.items() if value is not None}
+    # Remove None values
+    entry_data = {k: v for k, v in entry_data.items() if v is not None}
 
-    # Store the filtered entry data under the entry_id
-    hass.data[DOMAIN][entry.entry_id] = filtered_entry_data
+    # Add provider and model if present
+    if provider:
+        entry_data["provider"] = provider
+    if default_model:
+        entry_data["default_model"] = default_model
+
+    # Store the data
+    hass.data[DOMAIN][entry.entry_id] = entry_data
 
     # check if the entry is the calendar entry (has entry rentention_time)
-    if filtered_entry_data.get(CONF_RETENTION_TIME) is not None:
+    if entry_data.get(CONF_RETENTION_TIME) is not None:
         # forward the calendar entity to the platform
         await hass.config_entries.async_forward_entry_setups(entry, ["calendar"])
 
@@ -264,12 +274,9 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
         # Initialize call object with service call data
         call = ServiceCallData(data_call).get_service_call_data()
-        # Initialize the RequestHandler client
-        client = RequestHandler(hass,
-                                message=call.message,
-                                max_tokens=call.max_tokens,
-                                temperature=call.temperature,
-                                detail=call.detail)
+        
+        # Initialize the RequestHandler client with the service call data
+        client = RequestHandler(hass, call)
 
         # Fetch and preprocess images
         processor = MediaProcessor(hass, client)
@@ -283,8 +290,11 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
         # Validate configuration, input data and make the call
         response = await client.make_request(call)
-        await _remember(hass, call, start, response)
-        return response
+        response_data = {"response_text": response}
+        await _remember(hass, call, start, response_data)
+        if call.sensor_entity:
+            await _update_sensor(hass, call.sensor_entity, response)
+        return response_data
 
     async def video_analyzer(data_call):
         """Handle the service call to analyze a video (future implementation)"""

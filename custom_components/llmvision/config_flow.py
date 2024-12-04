@@ -90,7 +90,7 @@ class Validator:
                 'Authorization': 'Bearer ' + api_key,
                 'Content-Type': 'application/json'
             }
-            base_url = "openrouter.ai" 
+            base_url = "openrouter.ai"
             endpoint = "/api/v1/models"  
             payload = {}
             method = "GET"
@@ -264,9 +264,66 @@ class llmvisionConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     VERSION = 2
 
+    async def async_step_user(self, user_input=None):
+        """Handle a flow initialized by the user."""
+        return self.async_show_menu(
+            step_id="user",
+            menu_options=["llm_providers", "non_llm_options"]
+        )
+
+    async def async_step_llm_providers(self, user_input=None):
+        """Handle LLM providers setup."""
+        data_schema = vol.Schema({
+            vol.Required("provider", default="OpenAI"): selector({
+                "select": {
+                    "options": ["OpenAI", "Anthropic", "Google", "Groq", "OpenRouter", "LocalAI", "Ollama", "Custom OpenAI"],
+                    "mode": "dropdown",
+                    "sort": False,
+                    "custom_value": False
+                }
+            }),
+        })
+
+        if user_input is not None:
+            provider = user_input["provider"]
+            return await self.handle_provider(provider)
+
+        return self.async_show_form(
+            step_id="llm_providers",
+            data_schema=data_schema,
+        )
+
+    async def async_step_non_llm_options(self, user_input=None):
+        """Handle non-LLM options setup."""
+        data_schema = vol.Schema({
+            vol.Required("provider", default="Event Calendar"): str,
+            vol.Optional("retention_time", default=7): int
+        })
+
+        if user_input is not None:
+            # Check if Event Calendar is already configured
+            for entry in self.hass.config_entries.async_entries(DOMAIN):
+                if entry.data.get("provider") == "Event Calendar":
+                    return self.async_abort(reason="already_configured")
+            
+            # Add provider to user_input
+            user_input["provider"] = "Event Calendar"
+            
+            validator = Validator(self.hass, user_input)
+            await validator.semantic_index()
+            
+            return self.async_create_entry(
+                title="LLM Vision Events",
+                data=user_input
+            )
+
+        return self.async_show_form(
+            step_id="non_llm_options",
+            data_schema=data_schema,
+        )
+
     async def handle_provider(self, provider):
         provider_steps = {
-            "Event Calendar": self.async_step_semantic_index,
             "OpenAI": self.async_step_openai,
             "Anthropic": self.async_step_anthropic,
             "Google": self.async_step_google,
@@ -284,29 +341,6 @@ class llmvisionConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             _LOGGER.error(f"Unknown provider: {provider}")
             return self.async_abort(reason="unknown_provider")
 
-    async def async_step_user(self, user_input=None):
-        data_schema = vol.Schema({
-            vol.Required("provider", default="Event Calendar"): selector({
-                "select": {
-                    "options": ["Event Calendar", "OpenAI", "Anthropic", "Google", "Groq", "OpenRouter", "LocalAI", "Ollama", "Custom OpenAI"],
-                    "mode": "dropdown",
-                    "sort": False,
-                    "custom_value": False
-                }
-            }),
-        })
-
-        if user_input is not None:
-            self.init_info = user_input
-            provider = user_input["provider"]
-            return await self.handle_provider(provider)
-
-        return self.async_show_form(
-            step_id="user",
-            data_schema=data_schema,
-            description_placeholders=user_input
-        )
-
     async def async_step_localai(self, user_input=None):
         data_schema = vol.Schema({
             vol.Required(CONF_LOCALAI_IP_ADDRESS): str,
@@ -316,7 +350,7 @@ class llmvisionConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             # save provider to user_input
-            user_input["provider"] = self.init_info["provider"]
+            user_input["provider"] = "LocalAI"
             validator = Validator(self.hass, user_input)
             try:
                 await validator.localai()
@@ -344,7 +378,7 @@ class llmvisionConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             # save provider to user_input
-            user_input["provider"] = self.init_info["provider"]
+            user_input["provider"] = "Ollama"
             validator = Validator(self.hass, user_input)
             try:
                 await validator.ollama()
@@ -370,12 +404,12 @@ class llmvisionConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             # save provider to user_input
-            user_input["provider"] = self.init_info["provider"]
+            user_input["provider"] = "OpenAI"
             validator = Validator(self.hass, user_input)
             try:
                 await validator.openai()
                 # add the mode to user_input
-                user_input["provider"] = self.init_info["provider"]
+                user_input["provider"] = "OpenAI"
                 return self.async_create_entry(title="OpenAI", data=user_input)
             except ServiceValidationError as e:
                 _LOGGER.error(f"Validation failed: {e}")
@@ -397,12 +431,12 @@ class llmvisionConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             # save provider to user_input
-            user_input["provider"] = self.init_info["provider"]
+            user_input["provider"] = "Anthropic"
             validator = Validator(self.hass, user_input)
             try:
                 await validator.anthropic()
                 # add the mode to user_input
-                user_input["provider"] = self.init_info["provider"]
+                user_input["provider"] = "Anthropic"
                 return self.async_create_entry(title="Anthropic Claude", data=user_input)
             except ServiceValidationError as e:
                 _LOGGER.error(f"Validation failed: {e}")
@@ -424,12 +458,12 @@ class llmvisionConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             # save provider to user_input
-            user_input["provider"] = self.init_info["provider"]
+            user_input["provider"] = "Google"
             validator = Validator(self.hass, user_input)
             try:
                 await validator.google()
                 # add the mode to user_input
-                user_input["provider"] = self.init_info["provider"]
+                user_input["provider"] = "Google"
                 return self.async_create_entry(title="Google Gemini", data=user_input)
             except ServiceValidationError as e:
                 _LOGGER.error(f"Validation failed: {e}")
@@ -451,12 +485,12 @@ class llmvisionConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             # save provider to user_input
-            user_input["provider"] = self.init_info["provider"]
+            user_input["provider"] = "Groq"
             validator = Validator(self.hass, user_input)
             try:
                 await validator.groq()
                 # add the mode to user_input
-                user_input["provider"] = self.init_info["provider"]
+                user_input["provider"] = "Groq"
                 return self.async_create_entry(title="Groq", data=user_input)
             except ServiceValidationError as e:
                 _LOGGER.error(f"Validation failed: {e}")
@@ -492,13 +526,11 @@ class llmvisionConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 user_input["provider"] = "OpenRouter"
                 validator = Validator(self.hass, user_input)
                 await validator.openrouter()
+                
+                # Store the API key and model info together
                 return self.async_create_entry(
                     title=f"OpenRouter ({user_input.get('default_model', DEFAULT_MODEL_OPENROUTER)})",
-                    data={
-                        "provider": "OpenRouter",
-                        CONF_OPENROUTER_API_KEY: user_input[CONF_OPENROUTER_API_KEY],
-                        "default_model": user_input.get("default_model", DEFAULT_MODEL_OPENROUTER)
-                    },
+                    data=user_input
                 )
             except ServiceValidationError as error:
                 errors["base"] = error.args[0]
@@ -517,12 +549,12 @@ class llmvisionConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             # save provider to user_input
-            user_input["provider"] = self.init_info["provider"]
+            user_input["provider"] = "Custom OpenAI"
             validator = Validator(self.hass, user_input)
             try:
                 await validator.custom_openai()
                 # add the mode to user_input
-                user_input["provider"] = self.init_info["provider"]
+                user_input["provider"] = "Custom OpenAI"
                 return self.async_create_entry(title="Custom OpenAI compatible Provider", data=user_input)
             except ServiceValidationError as e:
                 _LOGGER.error(f"Validation failed: {e}")
@@ -535,41 +567,4 @@ class llmvisionConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id="custom_openai",
             data_schema=data_schema,
-        )
-
-    async def async_step_semantic_index(self, user_input=None):
-        """Handle Event Calendar configuration."""
-        errors = {}
-        data_schema = vol.Schema({
-            vol.Required(CONF_RETENTION_TIME, default=7): vol.All(
-                int,
-                vol.Range(min=0)  # Allow 0 for no auto-deletion
-            ),
-        })
-
-        if user_input is not None:
-            try:
-                # Check if Event Calendar is already configured
-                for entry in self.hass.config_entries.async_entries(DOMAIN):
-                    if entry.data.get("provider") == "Event Calendar":
-                        return self.async_abort(reason="already_configured")
-                
-                # Add provider to user_input
-                user_input["provider"] = "Event Calendar"
-                
-                validator = Validator(self.hass, user_input)
-                await validator.semantic_index()
-                
-                return self.async_create_entry(
-                    title="LLM Vision Events",
-                    data=user_input
-                )
-            except Exception as error:
-                _LOGGER.error(f"Failed to setup Event Calendar: {error}")
-                errors["base"] = "unknown"
-
-        return self.async_show_form(
-            step_id="semantic_index",
-            data_schema=data_schema,
-            errors=errors,
         )

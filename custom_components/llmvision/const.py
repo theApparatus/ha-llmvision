@@ -76,7 +76,7 @@ OPENROUTER_VISION_MODELS = [
 
 # API Endpoints
 ENDPOINT_OPENAI = "https://api.openai.com"
-ENDPOINT_OPENROUTER = "https://api.openrouter.ai/v1"
+ENDPOINT_OPENROUTER = "https://openrouter.ai/api/v1/chat/completions"
 ENDPOINT_ANTHROPIC = "https://api.anthropic.com/v1/messages"
 ENDPOINT_GOOGLE = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
 ENDPOINT_GROQ = "https://api.groq.com/openai/v1/chat/completions"
