@@ -19,6 +19,10 @@ from .const import (
     CONF_CUSTOM_OPENAI_ENDPOINT,
     VERSION_ANTHROPIC,
     CONF_RETENTION_TIME,
+    CONF_OPENROUTER_API_KEY,
+    DEFAULT_MODEL_OPENROUTER,
+    OPENROUTER_VISION_MODELS,
+    ENDPOINT_OPENROUTER,
 )
 import voluptuous as vol
 import logging
@@ -81,12 +85,24 @@ class Validator:
             payload = {"messages": [
                 {"role": "user", "content": "Hello"}], "model": "gemma-7b-it"}
             method = "POST"
+        elif self.user_input["provider"] == "OpenRouter":
+            header = {
+                'Authorization': 'Bearer ' + api_key,
+                'Content-Type': 'application/json'
+            }
+            base_url = "openrouter.ai" 
+            endpoint = "/api/v1/models"  
+            payload = {}
+            method = "GET"
 
         return await self._handshake(base_url=base_url, endpoint=endpoint, protocol="https", header=header, payload=payload, expected_status=200, method=method)
 
     def _validate_provider(self):
-        if not self.user_input["provider"]:
-            raise ServiceValidationError("empty_mode")
+        """Validate provider configuration."""
+        provider = self.user_input.get("provider")
+        if not provider:
+            _LOGGER.error("No provider specified")
+            raise ServiceValidationError("no_provider")
 
     async def _handshake(self, base_url, endpoint, protocol="http", port="", header={}, payload={}, expected_status=200, method="GET"):
         _LOGGER.debug(
@@ -178,6 +194,36 @@ class Validator:
             _LOGGER.error("Could not connect to Groq server.")
             raise ServiceValidationError("handshake_failed")
 
+    async def openrouter(self):
+        """Validate OpenRouter configuration."""
+        self._validate_provider()
+        api_key = self.user_input[CONF_OPENROUTER_API_KEY]
+        
+        if not api_key:
+            _LOGGER.error("You need to provide a valid API key.")
+            raise ServiceValidationError("empty_api_key")
+
+        # Validate model if provided
+        model = self.user_input.get("default_model")
+        if model and model not in OPENROUTER_VISION_MODELS and not model.count("/") == 1:
+            _LOGGER.error(f"Invalid model format: {model}. Must be in format 'provider/model'")
+            raise ServiceValidationError("invalid_model_format")
+
+        header = {
+            'Authorization': f'Bearer {api_key}',
+            'Content-Type': 'application/json',
+            'HTTP-Referer': 'https://github.com/valentinfrlch/ha-llmvision',
+            'X-Title': 'Home Assistant LLM Vision'
+        }
+        base_url = "openrouter.ai"
+        endpoint = "/api/v1/models"
+        payload = {}
+        method = "GET"
+
+        if not await self._handshake(base_url=base_url, endpoint=endpoint, protocol="https", header=header, payload=payload, expected_status=200, method=method):
+            _LOGGER.error("Could not connect to OpenRouter server.")
+            raise ServiceValidationError("handshake_failed")
+
     async def semantic_index(self) -> bool:
         # check if semantic_index is already configured
         for uid in self.hass.data[DOMAIN]:
@@ -206,6 +252,8 @@ class Validator:
             providers.append("Custom OpenAI")
         if CONF_GROQ_API_KEY in self.hass.data[DOMAIN]:
             providers.append("Groq")
+        if CONF_OPENROUTER_API_KEY in self.hass.data[DOMAIN]:
+            providers.append("OpenRouter")
         return providers
 
 
@@ -220,8 +268,9 @@ class llmvisionConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             "Anthropic": self.async_step_anthropic,
             "Google": self.async_step_google,
             "Groq": self.async_step_groq,
-            "Ollama": self.async_step_ollama,
+            "OpenRouter": self.async_step_openrouter,
             "LocalAI": self.async_step_localai,
+            "Ollama": self.async_step_ollama,
             "Custom OpenAI": self.async_step_custom_openai,
         }
 
@@ -236,7 +285,7 @@ class llmvisionConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         data_schema = vol.Schema({
             vol.Required("provider", default="Event Calendar"): selector({
                 "select": {
-                    "options": ["Event Calendar", "OpenAI", "Anthropic", "Google", "Groq", "Ollama", "LocalAI", "Custom OpenAI"],
+                    "options": ["Event Calendar", "OpenAI", "Anthropic", "Google", "Groq", "OpenRouter", "LocalAI", "Ollama", "Custom OpenAI"],
                     "mode": "dropdown",
                     "sort": False,
                     "custom_value": False
@@ -417,6 +466,44 @@ class llmvisionConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id="groq",
             data_schema=data_schema,
+        )
+
+    async def async_step_openrouter(self, user_input=None):
+        """Handle OpenRouter configuration."""
+        errors = {}
+        data_schema = vol.Schema({
+            vol.Required(CONF_OPENROUTER_API_KEY): str,
+            vol.Optional("default_model", default=DEFAULT_MODEL_OPENROUTER): selector({
+                "select": {
+                    "options": OPENROUTER_VISION_MODELS,
+                    "mode": "dropdown",
+                    "sort": False,
+                    "custom_value": True
+                }
+            }),
+        })
+
+        if user_input is not None:
+            try:
+                # Add provider to user_input before validation
+                user_input["provider"] = "OpenRouter"
+                validator = Validator(self.hass, user_input)
+                await validator.openrouter()
+                return self.async_create_entry(
+                    title="OpenRouter",
+                    data={
+                        "provider": "OpenRouter",
+                        CONF_OPENROUTER_API_KEY: user_input[CONF_OPENROUTER_API_KEY],
+                        "default_model": user_input.get("default_model", DEFAULT_MODEL_OPENROUTER)
+                    },
+                )
+            except ServiceValidationError as error:
+                errors["base"] = error.args[0]
+
+        return self.async_show_form(
+            step_id="openrouter",
+            data_schema=data_schema,
+            errors=errors,
         )
 
     async def async_step_custom_openai(self, user_input=None):

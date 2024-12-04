@@ -31,7 +31,14 @@ from .const import (
     ERROR_GROQ_MULTIPLE_IMAGES,
     ERROR_LOCALAI_NOT_CONFIGURED,
     ERROR_OLLAMA_NOT_CONFIGURED,
-    ERROR_NO_IMAGE_INPUT
+    ERROR_NO_IMAGE_INPUT,
+    DEFAULT_MODEL_OPENAI,
+    DEFAULT_MODEL_OPENROUTER,
+    DEFAULT_MODEL_ANTHROPIC,
+    DEFAULT_MODEL_GOOGLE,
+    DEFAULT_MODEL_GROQ,
+    DEFAULT_MODEL_LOCALAI,
+    DEFAULT_MODEL_OLLAMA
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -77,14 +84,15 @@ def get_provider(hass, provider_uid):
 
 
 def default_model(provider): return {
-    "OpenAI": "gpt-4o-mini",
-    "Anthropic": "claude-3-5-sonnet-latest",
-    "Google": "gemini-1.5-flash-latest",
-    "Groq": "llava-v1.5-7b-4096-preview",
-    "LocalAI": "gpt-4-vision-preview",
-    "Ollama": "llava-phi3:latest",
-    "Custom OpenAI": "gpt-4o-mini"
-}.get(provider, "gpt-4o-mini")  # Default value if provider is not found
+    "OpenAI": DEFAULT_MODEL_OPENAI,
+    "OpenRouter": DEFAULT_MODEL_OPENROUTER,
+    "Anthropic": DEFAULT_MODEL_ANTHROPIC,
+    "Google": DEFAULT_MODEL_GOOGLE,
+    "Groq": DEFAULT_MODEL_GROQ,
+    "LocalAI": DEFAULT_MODEL_LOCALAI,
+    "Ollama": DEFAULT_MODEL_OLLAMA,
+    "Custom OpenAI": DEFAULT_MODEL_OPENAI
+}.get(provider, DEFAULT_MODEL_OPENAI)  # Default value if provider is not found
 
 
 class RequestHandler:
@@ -102,35 +110,36 @@ class RequestHandler:
 
     async def make_request(self, call):
         """Forward request to providers"""
-        entry_id = call.provider
-        provider = get_provider(self.hass, entry_id)
-        _LOGGER.info(f"Provider from call: {provider}")
-        model = call.model if call.model != "None" else default_model(provider)
+        provider = call.get("provider", "OpenAI")
+        model = call.get("model", default_model(provider))
+        api_key = None
+        ip_address = None
+        port = None
+        https = None
 
-        if provider == 'OpenAI':
-            api_key = self.hass.data.get(DOMAIN).get(
-                entry_id).get(CONF_OPENAI_API_KEY)
-            self._validate_call(provider=provider,
-                                api_key=api_key,
-                                base64_images=self.base64_images)
-            response_text = await self.openai(model=model, api_key=api_key)
+        if provider == "OpenAI":
+            api_key = self.hass.data[DOMAIN].get(CONF_OPENAI_API_KEY)
+            return await self.openai(model, api_key)
+        elif provider == "OpenRouter":
+            api_key = self.hass.data[DOMAIN].get(CONF_OPENROUTER_API_KEY)
+            return await self.openai(model, api_key, endpoint=ENDPOINT_OPENROUTER)
         elif provider == 'Anthropic':
             api_key = self.hass.data.get(DOMAIN).get(
-                entry_id).get(CONF_ANTHROPIC_API_KEY)
+                call.provider).get(CONF_ANTHROPIC_API_KEY)
             self._validate_call(provider=provider,
                                 api_key=api_key,
                                 base64_images=self.base64_images)
             response_text = await self.anthropic(model=model, api_key=api_key)
         elif provider == 'Google':
             api_key = self.hass.data.get(DOMAIN).get(
-                entry_id).get(CONF_GOOGLE_API_KEY)
+                call.provider).get(CONF_GOOGLE_API_KEY)
             self._validate_call(provider=provider,
                                 api_key=api_key,
                                 base64_images=self.base64_images)
             response_text = await self.google(model=model, api_key=api_key)
         elif provider == 'Groq':
             api_key = self.hass.data.get(DOMAIN).get(
-                entry_id).get(CONF_GROQ_API_KEY)
+                call.provider).get(CONF_GROQ_API_KEY)
             self._validate_call(provider=provider,
                                 api_key=api_key,
                                 base64_images=self.base64_images)
@@ -138,13 +147,13 @@ class RequestHandler:
         elif provider == 'LocalAI':
             ip_address = self.hass.data.get(
                 DOMAIN).get(
-                entry_id).get(CONF_LOCALAI_IP_ADDRESS)
+                call.provider).get(CONF_LOCALAI_IP_ADDRESS)
             port = self.hass.data.get(
                 DOMAIN).get(
-                entry_id).get(CONF_LOCALAI_PORT)
+                call.provider).get(CONF_LOCALAI_PORT)
             https = self.hass.data.get(
                 DOMAIN).get(
-                entry_id).get(CONF_LOCALAI_HTTPS, False)
+                call.provider).get(CONF_LOCALAI_HTTPS, False)
             self._validate_call(provider=provider,
                                 api_key=None,
                                 base64_images=self.base64_images,
@@ -157,11 +166,11 @@ class RequestHandler:
         elif provider == 'Ollama':
             ip_address = self.hass.data.get(
                 DOMAIN).get(
-                entry_id).get(CONF_OLLAMA_IP_ADDRESS)
+                call.provider).get(CONF_OLLAMA_IP_ADDRESS)
             port = self.hass.data.get(DOMAIN).get(
-                entry_id).get(CONF_OLLAMA_PORT)
+                call.provider).get(CONF_OLLAMA_PORT)
             https = self.hass.data.get(DOMAIN).get(
-                entry_id).get(
+                call.provider).get(
                 CONF_OLLAMA_HTTPS, False)
             self._validate_call(provider=provider,
                                 api_key=None,
@@ -174,9 +183,9 @@ class RequestHandler:
                                               https=https)
         elif provider == 'Custom OpenAI':
             api_key = self.hass.data.get(DOMAIN).get(
-                entry_id).get(
+                call.provider).get(
                 CONF_CUSTOM_OPENAI_API_KEY, "")
-            endpoint = self.hass.data.get(DOMAIN).get(entry_id).get(
+            endpoint = self.hass.data.get(DOMAIN).get(call.provider).get(
                 CONF_CUSTOM_OPENAI_ENDPOINT) + "/v1/chat/completions"
             self._validate_call(provider=provider,
                                 api_key=api_key,
@@ -192,36 +201,59 @@ class RequestHandler:
 
     # Request Handlers
     async def openai(self, model, api_key, endpoint=ENDPOINT_OPENAI):
-        # Set headers and payload
-        headers = {'Content-type': 'application/json',
-                   'Authorization': 'Bearer ' + api_key}
-        data = {"model": model,
-                "messages": [{"role": "user", "content": [
-                ]}],
-                "max_tokens": self.max_tokens,
-                "temperature": self.temperature
+        """Make request to OpenAI API"""
+        if not api_key:
+            raise ServiceValidationError(ERROR_OPENAI_NOT_CONFIGURED)
+
+        # For OpenRouter, we use the full model name (e.g., "openai/gpt-4-vision-preview")
+        # For OpenAI, we use just the model name (e.g., "gpt-4-vision-preview")
+        model_name = model if "/" in model else model
+        
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}",
+        }
+
+        # Add OpenRouter-specific headers if using OpenRouter
+        if endpoint == ENDPOINT_OPENROUTER:
+            headers.update({
+                "HTTP-Referer": "https://github.com/valentinfrlch/ha-llmvision",  # Required by OpenRouter
+                "X-Title": "Home Assistant LLM Vision"  # Optional but helps OpenRouter track usage
+            })
+
+        messages = [{
+            "role": "user",
+            "content": [
+                {"type": "text", "text": self.message},
+            ]
+        }]
+
+        # Add images to the message content
+        for i, image in enumerate(self.base64_images):
+            filename = self.filenames[i] if i < len(self.filenames) else f"image_{i+1}.jpg"
+            messages[0]["content"].append({
+                "type": "image_url",
+                "image_url": {
+                    "url": f"data:image/jpeg;base64,{image}",
+                    "detail": self.detail
                 }
+            })
 
-        # Add the images to the request
-        for image, filename in zip(self.base64_images, self.filenames):
-            tag = ("Image " + str(self.base64_images.index(image) + 1)
-                   ) if filename == "" else filename
-            data["messages"][0]["content"].append(
-                {"type": "text", "text": tag + ":"})
-            data["messages"][0]["content"].append(
-                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image}", "detail": self.detail}})
+        data = {
+            "model": model_name,
+            "messages": messages,
+            "max_tokens": self.max_tokens,
+            "temperature": self.temperature,
+        }
 
-        # append the message to the end of the request
-        data["messages"][0]["content"].append(
-            {"type": "text", "text": self.message}
-        )
+        url = f"{endpoint}/v1/chat/completions"
+        response = await self._post(url, headers, data)
+        
+        if response.get("error"):
+            error_message = response["error"].get("message", "Unknown error")
+            raise ServiceValidationError(error_message)
 
-        response = await self._post(
-            url=endpoint, headers=headers, data=data)
-
-        response_text = response.get(
-            "choices")[0].get("message").get("content")
-        return response_text
+        return response["choices"][0]["message"]["content"]
 
     async def anthropic(self, model, api_key):
         # Set headers and payload

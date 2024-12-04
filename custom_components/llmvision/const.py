@@ -8,6 +8,7 @@ CONF_OPENAI_API_KEY = 'openai_api_key'
 CONF_ANTHROPIC_API_KEY = 'anthropic_api_key'
 CONF_GOOGLE_API_KEY = 'google_api_key'
 CONF_GROQ_API_KEY = 'groq_api_key'
+CONF_OPENROUTER_API_KEY = 'openrouter_api_key'
 CONF_LOCALAI_IP_ADDRESS = 'localai_ip'
 CONF_LOCALAI_PORT = 'localai_port'
 CONF_LOCALAI_HTTPS = 'localai_https'
@@ -44,6 +45,7 @@ ERROR_ANTHROPIC_NOT_CONFIGURED = "Anthropic is not configured"
 ERROR_GOOGLE_NOT_CONFIGURED = "Google is not configured"
 ERROR_GROQ_NOT_CONFIGURED = "Groq is not configured"
 ERROR_GROQ_MULTIPLE_IMAGES = "Groq does not support videos or streams"
+ERROR_OPENROUTER_NOT_CONFIGURED = "OpenRouter is not configured"
 ERROR_LOCALAI_NOT_CONFIGURED = "LocalAI is not configured"
 ERROR_OLLAMA_NOT_CONFIGURED = "Ollama is not configured"
 ERROR_CUSTOM_OPENAI_NOT_CONFIGURED = "Custom OpenAI provider is not configured"
@@ -54,8 +56,27 @@ ERROR_HANDSHAKE_FAILED = "Connection could not be established"
 # https://docs.anthropic.com/en/api/versioning
 VERSION_ANTHROPIC = "2023-06-01"
 
+# Default models
+DEFAULT_MODEL_OPENAI = "gpt-4-vision-preview"
+DEFAULT_MODEL_ANTHROPIC = "claude-3-opus"
+DEFAULT_MODEL_GOOGLE = "gemini-pro-vision"
+DEFAULT_MODEL_GROQ = "mixtral-8x7b-32768"
+DEFAULT_MODEL_OPENROUTER = "openai/gpt-4-vision-preview"
+DEFAULT_MODEL_LOCALAI = "llava"
+DEFAULT_MODEL_OLLAMA = "llava"
+
+# Supported OpenRouter Models for vision tasks
+OPENROUTER_VISION_MODELS = [
+    "openai/gpt-4-vision-preview",
+    "anthropic/claude-3-opus",
+    "anthropic/claude-3-sonnet",
+    "google/gemini-pro-vision",
+    "qwen/qwen-vl-plus"
+]
+
 # API Endpoints
-ENDPOINT_OPENAI = "https://api.openai.com/v1/chat/completions"
+ENDPOINT_OPENAI = "https://api.openai.com"
+ENDPOINT_OPENROUTER = "https://api.openrouter.ai/v1"
 ENDPOINT_ANTHROPIC = "https://api.anthropic.com/v1/messages"
 ENDPOINT_GOOGLE = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
 ENDPOINT_GROQ = "https://api.groq.com/openai/v1/chat/completions"
